@@ -1,8 +1,7 @@
 import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
-import java.net.InetAddress;
-import java.net.SocketException;
+import java.util.UUID;
 
 /**
  * UDP提供者
@@ -10,34 +9,97 @@ import java.net.SocketException;
  */
 public class UDPProvider {
     public static void main(String[] args) throws IOException {
-        System.out.println("Provider启动");
+        // 生成一份唯一标示
+        String sn = UUID.randomUUID().toString();
+        Provider provider = new Provider(sn);
+        provider.start();
 
-        //作为一个接受者，指定一个端口进行监听。用于数据接收。
-        DatagramSocket ds = new DatagramSocket(20000);
+        // 读取任意键盘信息后可以退出
+        //noinspection ResultOfMethodCallIgnored
+        System.in.read();
+        provider.exit();
+    }
 
-//        构建一个接受实体
-        final byte[] buffer = new byte[512];
-        DatagramPacket receivePack = new DatagramPacket(buffer, buffer.length);
+    private static class Provider extends Thread {
+        private final String sn;
+        private boolean done = false;
+        private DatagramSocket ds = null;
 
-//        接收
-        ds.receive(receivePack);
+        public Provider(String sn) {
+            super();
+            this.sn = sn;
+        }
 
-//        打印接收到的消息与发送者的信息
-        String ip = receivePack.getAddress().getHostAddress();
-        int port = receivePack.getPort();
-        int dataLength = receivePack.getLength();
-        String data = new String(receivePack.getData(), 0, dataLength);
-        System.out.println("Provider接收到消息:ip:" + ip + ",端口号:" + port + ",数据长度:" + dataLength + ",数据内容:" + data);
+        @Override
+        public void run() {
+            super.run();
 
-//        构建一份回送数据
-        String responseData = "接收到消息，长度为:"+dataLength;
-        byte[] responseDataBytes = responseData.getBytes();
-//        直接跟发送者构建一份回送消息
-        DatagramPacket responsePacket = new DatagramPacket(responseDataBytes,responseDataBytes.length, receivePack.getAddress(),receivePack.getPort());
+            System.out.println("UDPProvider Started.");
 
-        ds.send(responsePacket);
+            try {
+                // 监听20000 端口
+                ds = new DatagramSocket(20000);
 
-        System.out.println("Provider结束");
-        ds.close();
+                while (!done) {
+
+                    // 构建接收实体
+                    final byte[] buf = new byte[512];
+                    DatagramPacket receivePack = new DatagramPacket(buf, buf.length);
+
+                    // 接收
+                    ds.receive(receivePack);
+
+                    // 打印接收到的信息与发送者的信息
+                    // 发送者的IP地址
+                    String ip = receivePack.getAddress().getHostAddress();
+                    int port = receivePack.getPort();
+                    int dataLen = receivePack.getLength();
+                    String data = new String(receivePack.getData(), 0, dataLen);
+                    System.out.println("UDPProvider receive form ip:" + ip
+                            + "\tport:" + port + "\tdata:" + data);
+
+                    // 解析端口号
+                    int responsePort = MessageCreater.parsePort(data);
+                    if (responsePort != -1) {
+                        // 构建一份回送数据
+                        String responseData = MessageCreater.buildWithSn(sn);
+                        byte[] responseDataBytes = responseData.getBytes();
+                        // 直接根据发送者构建一份回送信息
+                        DatagramPacket responsePacket = new DatagramPacket(responseDataBytes,
+                                responseDataBytes.length,
+                                receivePack.getAddress(),
+                                responsePort);
+
+                        ds.send(responsePacket);
+                    }
+
+                }
+
+            } catch (Exception ignored) {
+            } finally {
+                close();
+            }
+
+            // 完成
+            System.out.println("UDPProvider Finished.");
+        }
+
+
+        private void close() {
+            if (ds != null) {
+                ds.close();
+                ds = null;
+            }
+        }
+
+
+        /**
+         * 提供结束
+         */
+        void exit() {
+            done = true;
+            close();
+        }
+
     }
 }
